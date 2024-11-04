@@ -13,134 +13,147 @@ class FinancialItemForm extends StatefulWidget {
 class _FinancialItemFormState extends State<FinancialItemForm> {
   final _financialBox = Hive.box('financial_box');
 
-  List<Map<String, dynamic>> _incomeItems = [];
-  List<Map<String, dynamic>> _expenditureItems = [];
+  final Map<String, List<String>> categories = {
+    'INCOME': [
+      'Department of Education and Science',
+      'School Generated Income',
+      'Other Income',
+    ],
+    'EXPENDITURE': [
+      'Education – Teachers\' / Supervisors Salaries',
+      'Education – Other Expenses',
+      'Repairs, Maintenance and Establishment (RME)',
+      'Administration',
+      'Finance',
+      'Depreciation',
+    ],
+  };
+
+  Map<String, Map<String, List<Map<String, dynamic>>>> _items = {
+    'INCOME': {},
+    'EXPENDITURE': {},
+  };
 
   @override
   void initState() {
     super.initState();
-    // Initialize with one empty field for income and expenditure
-    _incomeItems.add({'subheading': '', 'amount': 0.0});
-    _expenditureItems.add({'subheading': '', 'amount': 0.0});
+    for (var category in categories.keys) {
+      for (var subcategory in categories[category]!) {
+        _items[category]![subcategory] = [];
+      }
+    }
   }
 
-  void _addIncomeField() {
+  void _addField(String category, String subcategory) {
     setState(() {
-      _incomeItems.add({'subheading': '', 'amount': 0.0});
+      _items[category]![subcategory]!.add({
+        'description': '',
+        'amount': 0.0,
+      });
     });
   }
 
-  void _addExpenditureField() {
+  void _removeField(String category, String subcategory, int index) {
     setState(() {
-      _expenditureItems.add({'subheading': '', 'amount': 0.0});
+      _items[category]![subcategory]!.removeAt(index);
     });
   }
 
   void _saveItems() {
-    // Save income items
-    for (var item in _incomeItems) {
-      if (item['subheading']!.isNotEmpty && item['amount'] > 0) {
-        _financialBox.add({
-          'heading': 'Income',
-          'subheading': item['subheading'],
-          'amount': item['amount'],
-        });
+    for (var category in _items.keys) {
+      for (var subcategory in _items[category]!.keys) {
+        for (var item in _items[category]![subcategory]!) {
+          if (item['description'].isNotEmpty && item['amount'] > 0) {
+            _financialBox.add({
+              'heading': category,
+              'subheading': subcategory,
+              'description': item['description'],
+              'amount': item['amount'],
+            });
+          }
+        }
       }
     }
+    widget.refreshItems();
+    Navigator.of(context).pop();
+  }
 
-    // Save expenditure items
-    for (var item in _expenditureItems) {
-      if (item['subheading']!.isNotEmpty && item['amount'] > 0) {
-        _financialBox.add({
-          'heading': 'Expenditure',
-          'subheading': item['subheading'],
-          'amount': item['amount'],
-        });
-      }
-    }
-
-    widget.refreshItems(); // Refresh the items in the home page
-    Navigator.of(context).pop(); // Close the form
+  Widget _buildSubcategory(String category, String subcategory) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(subcategory, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ..._items[category]![subcategory]!.asMap().entries.map((entry) {
+          int index = entry.key;
+          var item = entry.value;
+          return Padding(
+            padding: const EdgeInsets.only(left: 16.0, bottom: 8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    decoration: InputDecoration(labelText: 'Description'),
+                    onChanged: (value) {
+                      item['description'] = value;
+                    },
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  flex: 1,
+                  child: TextField(
+                    decoration: InputDecoration(labelText: 'Amount'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      item['amount'] = double.tryParse(value) ?? 0.0;
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: () => _removeField(category, subcategory, index),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        ElevatedButton(
+          onPressed: () => _addField(category, subcategory),
+          child: Text('Add Field'),
+        ),
+        SizedBox(height: 16),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'INCOME',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          ..._incomeItems.map((item) {
-            return Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(labelText: 'Subheading'),
-                    onChanged: (value) {
-                      item['subheading'] = value;
-                    },
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(labelText: 'Amount'),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      item['amount'] = double.tryParse(value) ?? 0.0;
-                    },
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-          ElevatedButton(
-            onPressed: _addIncomeField,
-            child: Text('Add Income Item'),
-          ),
-          SizedBox(height: 20),
-          Text(
-            'EXPENDITURE',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          ..._expenditureItems.map((item) {
-            return Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(labelText: 'Subheading'),
-                    onChanged: (value) {
-                      item['subheading'] = value;
-                    },
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(labelText: 'Amount'),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      item['amount'] = double.tryParse(value) ?? 0.0;
-                    },
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-          ElevatedButton(
-            onPressed: _addExpenditureField,
-            child: Text('Add Expenditure Item'),
-          ),
-          SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _saveItems,
-            child: Text('Save Items'),
-          ),
-        ],
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ...categories.entries.map((categoryEntry) {
+              String category = categoryEntry.key;
+              List<String> subcategories = categoryEntry.value;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(category, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 16),
+                  ...subcategories.map((subcategory) => _buildSubcategory(category, subcategory)),
+                  SizedBox(height: 24),
+                ],
+              );
+            }).toList(),
+            ElevatedButton(
+              onPressed: _saveItems,
+              child: Text('Save All Items'),
+            ),
+          ],
+        ),
       ),
     );
   }
