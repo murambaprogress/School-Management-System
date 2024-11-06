@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'home_page.dart';
 
 void main() async {
@@ -9,12 +10,28 @@ void main() async {
   // Initialize Hive
   await Hive.initFlutter();
 
+  // Initialize date formatting
+  await initializeDateFormatting();
+
   // Open the financial box and handle potential errors
   try {
     await Hive.openBox('financial_box');
   } catch (e) {
-    // Handle any errors that might occur while opening the box
     print("Error opening financial_box: $e");
+  }
+
+  // Open the asset box and handle potential errors
+  try {
+    await Hive.openBox('asset_box');
+  } catch (e) {
+    print("Error opening asset_box: $e");
+  }
+
+  // Open the financial position box and handle potential errors
+  try {
+    await Hive.openBox('financial_position_box');
+  } catch (e) {
+    print("Error opening financial_position_box: $e");
   }
 
   runApp(const MyApp());
@@ -27,7 +44,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'School Financial Statement',
+      title: 'School Financial Management',
       theme: ThemeData(
         primarySwatch: Colors.green,
       ),
