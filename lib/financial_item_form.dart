@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 class FinancialItemForm extends StatefulWidget {
   final Function refreshItems;
@@ -34,6 +39,8 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
     'EXPENDITURE': {},
   };
 
+  List<Map<String, dynamic>> _history = [];
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +49,13 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
         _items[category]![subcategory] = [];
       }
     }
+    _loadHistory();
+  }
+
+  void _loadHistory() {
+    // Load history from Hive or any persistent storage
+    // This is a placeholder; implement as needed
+     _history = _financialBox.get('history') ?? [];
   }
 
   void _addField(String category, String subcategory) {
@@ -60,22 +74,49 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
   }
 
   void _saveItems() {
+    double totalIncome = 0.0;
+    double totalExpenditure = 0.0;
+
     for (var category in _items.keys) {
       for (var subcategory in _items[category]!.keys) {
         for (var item in _items[category]![subcategory]!) {
           if (item['description'].isNotEmpty && item['amount'] > 0) {
+            if (category == 'INCOME') {
+              totalIncome += item['amount'];
+            } else if (category == 'EXPENDITURE') {
+              totalExpenditure += item['amount'];
+            }
+            // Save to Hive
             _financialBox.add({
               'heading': category,
               'subheading': subcategory,
               'description': item['description'],
               'amount': item['amount'],
+              'timestamp': DateTime.now().toIso8601String(),
             });
           }
         }
       }
     }
+
+    if (totalIncome > 0 || totalExpenditure > 0) {
+      setState(() {
+        _history.add({
+          'totalIncome': totalIncome,
+          'totalExpenditure': totalExpenditure,
+          'timestamp': DateTime.now(),
+        });
+      });
+    }
+
     widget.refreshItems();
     Navigator.of(context).pop();
+  }
+
+  double getSurplusOrDeficit() {
+    double totalIncome = _history.fold(0, (sum, entry) => sum + entry['totalIncome']);
+    double totalExpenditure = _history.fold(0, (sum, entry) => sum + entry['totalExpenditure']);
+    return totalIncome - totalExpenditure;
   }
 
   Widget _buildSubcategory(String category, String subcategory) {
@@ -83,41 +124,36 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(subcategory, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ..._items[category]![subcategory]!.asMap().entries.map((entry) {
-          int index = entry.key;
-          var item = entry.value;
-          return Padding(
-            padding: const EdgeInsets.only(left: 16.0, bottom: 8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    decoration: InputDecoration(labelText: 'Description'),
-                    onChanged: (value) {
-                      item['description'] = value;
-                    },
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  flex: 1,
-                  child: TextField(
-                    decoration: InputDecoration(labelText: 'Amount'),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      item['amount'] = double.tryParse(value) ?? 0.0;
-                    },
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.delete),
-                  onPressed: () => _removeField(category, subcategory, index),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+        DataTable(
+          columns: [
+            DataColumn(label: Text('Description')),
+            DataColumn(label: Text('Amount')),
+            DataColumn(label: Text('Actions')),
+          ],
+          rows : _items[category]![subcategory]!.asMap().entries.map((entry) {
+            int index = entry.key;
+            var item = entry.value;
+            return DataRow(cells: [
+              DataCell(TextField(
+                decoration: InputDecoration(labelText: 'Description'),
+                onChanged: (value) {
+                  item['description'] = value;
+                },
+              )),
+              DataCell(TextField(
+                decoration: InputDecoration(labelText: 'Amount'),
+                keyboardType: TextInputType.number,
+                onChanged: (value) {
+                  item['amount'] = double.tryParse(value) ?? 0.0;
+                },
+              )),
+              DataCell(IconButton(
+                icon: Icon(Icons.delete),
+                onPressed: () => _removeField(category, subcategory, index),
+              )),
+            ]);
+          }).toList(),
+        ),
         ElevatedButton(
           onPressed: () => _addField(category, subcategory),
           child: Text('Add Field'),
@@ -125,6 +161,90 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
         SizedBox(height: 16),
       ],
     );
+  }
+
+  Widget buildHistoryTable() {
+    return DataTable(
+      columns: [
+        DataColumn(label: Text('Date')),
+        DataColumn(label: Text('Total Income')),
+        DataColumn(label: Text('Total Expenditure')),
+        DataColumn(label: Text('Surplus/Deficit')),
+        DataColumn(label: Text('Actions')),
+      ],
+      rows: _history.map((entry) {
+        return DataRow(cells: [
+          DataCell(Text(DateFormat.yMMMd().format(entry['timestamp']))),
+          DataCell(Text(entry['totalIncome'].toString())),
+          DataCell(Text(entry['totalExpenditure'].toString())),
+          DataCell(Text(getSurplusOrDeficit().toString())),
+          DataCell(Row(
+            children: [
+              IconButton(
+                icon: Icon(Icons.edit),
+                onPressed: () {
+                  // Implement repopulate logic here
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.delete),
+                onPressed: () {
+                  // Implement delete logic here
+                },
+              ),
+            ],
+          )),
+        ]);
+      }).toList(),
+    );
+  }
+
+  Future<void> printSelectedHistory() async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        build: (pw.Context context) {
+          return pw.Column(
+            children: [
+              pw.Text('Financial History', style: pw.TextStyle(fontSize: 24)),
+              pw.SizedBox(height: 20),
+              ..._history.map((entry) {
+                return pw.Column(
+                  children: [
+                    pw.Text('Date: ${DateFormat.yMMMd().format(entry['timestamp'])}'),
+                    pw.Text('Total Income: ${entry['totalIncome']}'),
+                    pw.Text('Total Expenditure: ${entry['totalExpenditure']}'),
+                    pw.Text('Surplus/Deficit: ${getSurplusOrDeficit()}'),
+                    pw.Divider(),
+                  ],
+                );
+              }).toList(),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+    );
+  }
+
+  void shareSelectedHistory() {
+    StringBuffer shareContent = StringBuffer();
+    
+    shareContent.writeln('Financial History\n');
+    
+    for (var entry in _history) {
+      shareContent.writeln('Date: ${DateFormat.yMMMd().format(entry['timestamp'])}');
+      shareContent.writeln('Total Income: ${entry['totalIncome']}');
+      shareContent.writeln('Total Expenditure: ${entry['totalExpenditure']}');
+      shareContent.writeln('Surplus/Deficit: ${getSurplusOrDeficit()}');
+      shareContent.writeln('\n');
+    }
+    
+    Share.share(shareContent.toString());
   }
 
   @override
@@ -149,8 +269,19 @@ class _FinancialItemFormState extends State<FinancialItemForm> {
               );
             }).toList(),
             ElevatedButton(
-              onPressed: _saveItems,
+              onPressed: () => _saveItems(),
               child: Text('Save All Items'),
+            ),
+            SizedBox(height: 24),
+            Text('History', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            buildHistoryTable(),
+            ElevatedButton(
+              onPressed: printSelectedHistory,
+              child: Text('Print Selected'),
+            ),
+            ElevatedButton(
+              onPressed: shareSelectedHistory,
+              child: Text('Share Selected'),
             ),
           ],
         ),
